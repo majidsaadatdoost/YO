@@ -61,12 +61,16 @@
       transform: scale(0.95);
     }
     
-    .friend-code {
+    .setup-container {
       background: rgba(255,255,255,0.2);
-      padding: 1rem;
-      border-radius: 10px;
+      padding: 2rem;
+      border-radius: 15px;
       margin-bottom: 1rem;
-      font-size: 1.2rem;
+    }
+    
+    .setup-heading {
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
     }
     
     input {
@@ -78,7 +82,7 @@
       margin-bottom: 1rem;
     }
     
-    .connect-btn {
+    .button {
       background: #00C9B1;
       color: white;
       border: none;
@@ -91,7 +95,7 @@
       width: 100%;
     }
     
-    .connect-btn:hover {
+    .button:hover {
       background: #00DEC4;
     }
     
@@ -106,6 +110,7 @@
       animation: slideIn 0.5s forwards;
       font-weight: bold;
       box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+      z-index: 100;
     }
     
     @keyframes slideIn {
@@ -117,10 +122,6 @@
         transform: translateY(0);
         opacity: 1;
       }
-    }
-    
-    .setup, .yo-interface {
-      transition: all 0.3s ease;
     }
     
     .hidden {
@@ -158,6 +159,26 @@
       top: 50%;
       right: -50px;
     }
+    
+    .status {
+      margin-top: 1rem;
+      padding: 0.5rem;
+      border-radius: 5px;
+      font-size: 0.9rem;
+    }
+
+    .online {
+      background: rgba(0, 255, 0, 0.2);
+    }
+
+    .offline {
+      background: rgba(255, 0, 0, 0.2);
+    }
+    
+    .yo-count {
+      font-size: 1.2rem;
+      margin-top: 0.5rem;
+    }
   </style>
 </head>
 <body>
@@ -165,149 +186,304 @@
   <div class="blob blob-2"></div>
   <div class="blob blob-3"></div>
   
+  <div class="notification" id="notification">
+    <p>You got Yo'd!</p>
+  </div>
+
   <div class="container">
-    <div class="setup">
-      <h1>Yo!</h1>
-      <div class="friend-code">
-        <p>Your Yo Code:</p>
-        <p id="myCode">Generating...</p>
+    <h1>Yo!</h1>
+    
+    <!-- Setup Interface -->
+    <div id="setupInterface" class="setup-container">
+      <h2 class="setup-heading">Set Your Name</h2>
+      <input type="text" id="nameInput" placeholder="Enter your name">
+      
+      <div id="userOneSetup">
+        <p>Create a new Yo room</p>
+        <button class="button" id="createRoomBtn">Create Room</button>
       </div>
-      <input type="text" id="friendCode" placeholder="Enter your friend's Yo code">
-      <button class="connect-btn" id="connectBtn">Connect with Friend</button>
+      
+      <div id="userTwoSetup" class="hidden">
+        <p>Join an existing Yo room</p>
+        <input type="text" id="roomCodeInput" placeholder="Enter room code">
+        <button class="button" id="joinRoomBtn">Join Room</button>
+      </div>
+      
+      <p class="status" id="setupStatus"></p>
     </div>
     
-    <div class="yo-interface hidden">
-      <h1>Yo!</h1>
+    <!-- Yo Interface -->
+    <div id="yoInterface" class="hidden">
       <button class="yo-button" id="yoBtn">Yo!</button>
-      <button class="connect-btn" id="disconnectBtn">Disconnect</button>
+      <p id="connectedStatus">Connected with: <span id="friendName">friend</span></p>
+      <p class="yo-count">Yos sent: <span id="yoCount">0</span></p>
+      <button class="button" id="disconnectBtn">Disconnect</button>
     </div>
   </div>
-  
-  <div class="notification" id="notification">You got Yo'd!</div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/uuid/8.3.2/uuid.min.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      // DOM elements
-      const setupDiv = document.querySelector('.setup');
-      const yoInterface = document.querySelector('.yo-interface');
-      const myCodeElement = document.getElementById('myCode');
-      const friendCodeInput = document.getElementById('friendCode');
-      const connectBtn = document.getElementById('connectBtn');
-      const disconnectBtn = document.getElementById('disconnectBtn');
+      // DOM Elements
+      const setupInterface = document.getElementById('setupInterface');
+      const yoInterface = document.getElementById('yoInterface');
+      const nameInput = document.getElementById('nameInput');
+      const createRoomBtn = document.getElementById('createRoomBtn');
+      const userTwoSetup = document.getElementById('userTwoSetup');
+      const roomCodeInput = document.getElementById('roomCodeInput');
+      const joinRoomBtn = document.getElementById('joinRoomBtn');
+      const setupStatus = document.getElementById('setupStatus');
       const yoBtn = document.getElementById('yoBtn');
+      const friendNameElement = document.getElementById('friendName');
+      const disconnectBtn = document.getElementById('disconnectBtn');
       const notification = document.getElementById('notification');
+      const yoCountElement = document.getElementById('yoCount');
       
-      // Generate or retrieve user code
-      let myCode = localStorage.getItem('myYoCode');
-      if (!myCode) {
-        myCode = uuid.v4().substring(0, 8);
-        localStorage.setItem('myYoCode', myCode);
-      }
-      myCodeElement.textContent = myCode;
+      // App State
+      let appState = {
+        userName: localStorage.getItem('yoUserName') || '',
+        roomCode: localStorage.getItem('yoRoomCode') || '',
+        isRoomCreator: localStorage.getItem('yoIsRoomCreator') === 'true',
+        friendName: localStorage.getItem('yoFriendName') || '',
+        yoCount: parseInt(localStorage.getItem('yoCount') || '0'),
+        lastCheckTime: Date.now()
+      };
       
-      // Check if already connected to friend
-      let friendCode = localStorage.getItem('friendYoCode');
-      if (friendCode) {
-        friendCodeInput.value = friendCode;
-        setupDiv.classList.add('hidden');
-        yoInterface.classList.remove('hidden');
-      }
+      // Initialize UI
+      init();
       
-      // Connect with friend
-      connectBtn.addEventListener('click', () => {
-        const enteredCode = friendCodeInput.value.trim();
-        if (enteredCode && enteredCode !== myCode) {
-          localStorage.setItem('friendYoCode', enteredCode);
-          setupDiv.classList.add('hidden');
-          yoInterface.classList.remove('hidden');
-          
-          // Setup polling for Yos
-          startPolling();
-        } else {
-          alert('Please enter a valid friend code different from your own');
+      function init() {
+        // Set stored name if it exists
+        if (appState.userName) {
+          nameInput.value = appState.userName;
         }
+        
+        // Show join room option by default
+        setTimeout(() => {
+          userTwoSetup.classList.remove('hidden');
+        }, 500);
+        
+        // If already connected to a room, show the Yo interface
+        if (appState.roomCode) {
+          setupInterface.classList.add('hidden');
+          yoInterface.classList.remove('hidden');
+          friendNameElement.textContent = appState.friendName || 'friend';
+          yoCountElement.textContent = appState.yoCount;
+          startCheckingForYos();
+        }
+      }
+      
+      // Generate a room code
+      function generateRoomCode() {
+        return Math.random().toString(36).substring(2, 8).toUpperCase();
+      }
+      
+      // Create a new room
+      createRoomBtn.addEventListener('click', () => {
+        const name = nameInput.value.trim();
+        if (!name) {
+          alert('Please enter your name');
+          return;
+        }
+        
+        // Save user name
+        appState.userName = name;
+        localStorage.setItem('yoUserName', name);
+        
+        // Generate room code
+        const roomCode = generateRoomCode();
+        appState.roomCode = roomCode;
+        appState.isRoomCreator = true;
+        
+        // Save to localStorage
+        localStorage.setItem('yoRoomCode', roomCode);
+        localStorage.setItem('yoIsRoomCreator', 'true');
+        
+        // Update UI
+        setupStatus.textContent = `Room created! Your room code is: ${roomCode}`;
+        setupStatus.classList.add('online');
+        
+        // Store creator's info in localStorage for the joiner to find
+        localStorage.setItem(`yo_room_${roomCode}_creator`, name);
+        localStorage.setItem(`yo_room_${roomCode}_last_seen`, Date.now());
+        
+        // Start checking for the second person
+        checkForFriend(roomCode);
       });
       
-      // Disconnect
-      disconnectBtn.addEventListener('click', () => {
-        localStorage.removeItem('friendYoCode');
-        setupDiv.classList.remove('hidden');
-        yoInterface.classList.add('hidden');
-        stopPolling();
+      // Join an existing room
+      joinRoomBtn.addEventListener('click', () => {
+        const name = nameInput.value.trim();
+        const roomCode = roomCodeInput.value.trim().toUpperCase();
+        
+        if (!name) {
+          alert('Please enter your name');
+          return;
+        }
+        
+        if (!roomCode) {
+          alert('Please enter a room code');
+          return;
+        }
+        
+        // Check if room exists
+        const creatorName = localStorage.getItem(`yo_room_${roomCode}_creator`);
+        if (!creatorName) {
+          setupStatus.textContent = 'Room not found. Please check the code.';
+          setupStatus.classList.add('offline');
+          return;
+        }
+        
+        // Save user info
+        appState.userName = name;
+        appState.roomCode = roomCode;
+        appState.isRoomCreator = false;
+        appState.friendName = creatorName;
+        
+        // Save to localStorage
+        localStorage.setItem('yoUserName', name);
+        localStorage.setItem('yoRoomCode', roomCode);
+        localStorage.setItem('yoIsRoomCreator', 'false');
+        localStorage.setItem('yoFriendName', creatorName);
+        
+        // Store joiner's info for the creator to find
+        localStorage.setItem(`yo_room_${roomCode}_joiner`, name);
+        localStorage.setItem(`yo_room_${roomCode}_last_seen`, Date.now());
+        
+        // Update UI
+        setupStatus.textContent = `Joined room! Connected with ${creatorName}`;
+        setupStatus.classList.add('online');
+        
+        // Show the Yo interface
+        setTimeout(() => {
+          setupInterface.classList.add('hidden');
+          yoInterface.classList.remove('hidden');
+          friendNameElement.textContent = creatorName;
+          startCheckingForYos();
+        }, 1500);
       });
+      
+      // Check if friend joined the room
+      function checkForFriend(roomCode) {
+        const checkInterval = setInterval(() => {
+          const joinerName = localStorage.getItem(`yo_room_${roomCode}_joiner`);
+          if (joinerName) {
+            clearInterval(checkInterval);
+            
+            // Save friend's name
+            appState.friendName = joinerName;
+            localStorage.setItem('yoFriendName', joinerName);
+            
+            // Update UI
+            setupStatus.textContent = `${joinerName} joined your room!`;
+            
+            // Show the Yo interface
+            setTimeout(() => {
+              setupInterface.classList.add('hidden');
+              yoInterface.classList.remove('hidden');
+              friendNameElement.textContent = joinerName;
+              startCheckingForYos();
+            }, 1500);
+          }
+        }, 2000);
+      }
       
       // Send a Yo
       yoBtn.addEventListener('click', () => {
-        const friendCode = localStorage.getItem('friendYoCode');
-        if (friendCode) {
-          sendYo(friendCode);
+        if (!appState.roomCode || !appState.userName) return;
+        
+        // Update the timestamp of the Yo for the receiver to find
+        const yoKey = appState.isRoomCreator 
+          ? `yo_room_${appState.roomCode}_creator_sent_yo` 
+          : `yo_room_${appState.roomCode}_joiner_sent_yo`;
           
-          // Animation feedback
-          yoBtn.style.transform = 'scale(0.9)';
-          setTimeout(() => {
-            yoBtn.style.transform = 'scale(1)';
-          }, 200);
-        }
+        localStorage.setItem(yoKey, Date.now());
+        
+        // Update presence
+        updatePresence();
+        
+        // Update yo count
+        appState.yoCount++;
+        localStorage.setItem('yoCount', appState.yoCount);
+        yoCountElement.textContent = appState.yoCount;
+        
+        // Animate button
+        yoBtn.style.transform = 'scale(0.9)';
+        setTimeout(() => {
+          yoBtn.style.transform = 'scale(1)';
+        }, 200);
       });
       
-      // Since we don't have a real-time database, this simulation uses localStorage
-      // In a real app, you'd use Firebase, WebSockets, or another service
-      function sendYo(recipientCode) {
-        // Store the Yo with timestamp in localStorage (simulating a database)
-        const yos = JSON.parse(localStorage.getItem('pendingYos') || '{}');
-        yos[recipientCode] = Date.now();
-        localStorage.setItem('pendingYos', JSON.stringify(yos));
+      // Check for incoming Yos
+      function startCheckingForYos() {
+        // Update presence immediately
+        updatePresence();
         
-        // In a real app, you'd send a push notification or use a real-time database
-        console.log(`Yo sent to ${recipientCode}`);
-      }
-      
-      let pollingInterval;
-      
-      function startPolling() {
-        // Check for Yos every few seconds
-        pollingInterval = setInterval(checkForYos, 3000);
-      }
-      
-      function stopPolling() {
-        clearInterval(pollingInterval);
+        // Check for Yos every second
+        setInterval(() => {
+          checkForYos();
+          updatePresence();
+        }, 1000);
       }
       
       function checkForYos() {
-        const pendingYos = JSON.parse(localStorage.getItem('pendingYos') || '{}');
-        if (pendingYos[myCode]) {
-          // You got a Yo!
-          showNotification();
+        if (!appState.roomCode) return;
+        
+        // The key we need to check depends on whether we're the creator or joiner
+        const yoKey = appState.isRoomCreator 
+          ? `yo_room_${appState.roomCode}_joiner_sent_yo` 
+          : `yo_room_${appState.roomCode}_creator_sent_yo`;
           
-          // Remove the Yo
-          delete pendingYos[myCode];
-          localStorage.setItem('pendingYos', JSON.stringify(pendingYos));
+        const lastYoTime = parseInt(localStorage.getItem(yoKey) || '0');
+        
+        // If there's a new Yo since our last check
+        if (lastYoTime > appState.lastCheckTime) {
+          showNotification();
+          appState.lastCheckTime = Date.now();
         }
       }
       
+      // Update our "last seen" timestamp so friend knows we're online
+      function updatePresence() {
+        localStorage.setItem(`yo_room_${appState.roomCode}_last_seen`, Date.now());
+      }
+      
+      // Show notification when Yo is received
       function showNotification() {
+        // Display notification
         notification.style.display = 'block';
         
-        // Play sound (optional)
-        const audio = new Audio('data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA/+M4wAAAAAAAAAAAAFhpbmcAAAAPAAAAAwAAA3gAj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj7Kysre3t7e3t7e3t7e3t7e3t7e3t7e3t7e3t7e3t7e3t///////////////////////////////////////////////////////////////////////////////////AAAAAExhdmM1OC4xMwAAAAAAAAAAAAAAACQCkAAAAAAAAAOw57q9qAAAAAAAAAAAAAAAAAAAAP/jWMQAErUyqBEmMGAAAAIMxJZ3MxAhAZBAwDAkDAdBwHAnDwV97wNB+Hwfg/B+D8H4v1AgEAgEAm+UCAQCAQBAEAQBAEAQDAfB8H4fB8Hw/6/AgEAgEAgEAQBAEAQBAEAQBAEATC6XbJ22S9bL82zndnOd2dn3LqXUsuzszndnZzndnZznZznPuXZ2c53Z2c53Z2c53Z2c53Z2c53Z2c53Z2c53Z2c53Z2c53Z2c51Lb/tXrnQEAQBSZUEjSSSSSSkkkkkkkkkkpt+kkkkkkkkkkkkkkkkkpt+kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkko//MsxCIObV5oH8xIAmkkkkkkkkkkko/8w7//w7QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/zLMQaAAAAAH+MAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//MMRP+AAAH+MAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8=');
+        // Play sound
+        const audio = new Audio('data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA/+M4wAAAAAAAAAAAAFhpbmcAAAAPAAAAAwAAA3gAj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj7Kysre3t7e3t7e3t7e3t7e3t7e3t7e3t7e3t7e3t7e3t///////////////////////////////////////////////////////////////////////////////////AAAAAExhdmM1OC4xMwAAAAAAAAAAAAAAACQCkAAAAAAAAAOw57q9qAAAAAAAAAAAAAAAAAAAAP/jWMQAErUyqBEmMGAAAAIMxJZ3MxAhAZBAwDAkDAdBwHAnDwV97wNB+Hwfg/B+D8H4v1AgEAgEAm+UCAQCAQBAEAQBAEAQDAfB8H4fB8Hw/6/AgEAgEAgEAQBAEAQBAEAQBAEATC6XbJ22S9bL82zndnOd2dn3LqXUsuzszndnZzndnZznZznPuXZ2c53Z2c53Z2c53Z2c53Z2c53Z2c53Z2c53Z2c53Z2c53Z2c51Lb/tXrnQEAQBSZUEjSSSSSSkkkkkkkkkkpt+kkkkkkkkkkkkkkkkkpt+kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkko//MsxCIObV5oH8xIAmkkkkkkkkkkko/8w7//w7AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/zLMQaAAAAAH+MAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//MMRP+AAAH+MAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8=');
         audio.play();
         
-        // Vibrate (mobile only)
+        // Vibrate device if supported
         if (navigator.vibrate) {
           navigator.vibrate(200);
         }
         
-        // Hide after 3 seconds
+        // Hide notification after 3 seconds
         setTimeout(() => {
           notification.style.display = 'none';
         }, 3000);
       }
       
-      // Start polling if already connected
-      if (friendCode) {
-        startPolling();
-      }
+      // Disconnect from room
+      disconnectBtn.addEventListener('click', () => {
+        // Clear app state
+        localStorage.removeItem('yoRoomCode');
+        localStorage.removeItem('yoIsRoomCreator');
+        localStorage.removeItem('yoFriendName');
+        localStorage.removeItem('yoCount');
+        
+        // Reset UI
+        setupInterface.classList.remove('hidden');
+        yoInterface.classList.add('hidden');
+        setupStatus.textContent = '';
+        setupStatus.className = 'status';
+        
+        // Reload page to reset everything
+        window.location.reload();
+      });
     });
   </script>
 </body>
